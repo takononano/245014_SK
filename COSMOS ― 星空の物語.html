@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>COSMOS ― 星空の物語</title>
+<style>
+:root{--bg:#02030a;--fg:#e8ecff;--accent:#ffd98a;--panel:rgba(10,14,34,.94)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:"Hiragino Mincho ProN","Yu Mincho",serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;cursor:grab;touch-action:none}
+canvas.drag{cursor:grabbing}canvas.hover{cursor:pointer}
+header{position:fixed;top:0;left:0;right:0;padding:calc(env(safe-area-inset-top,0px) + 18px) 24px 0;pointer-events:none;text-shadow:0 0 12px #000}
+h1{margin:0;font-size:clamp(22px,4vw,38px);letter-spacing:.3em;font-weight:400}
+h1 small{display:block;font-size:12px;letter-spacing:.4em;color:var(--accent);margin-top:6px}
+.hint{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 40px);text-align:center;font-size:13px;letter-spacing:.15em;opacity:.7;pointer-events:none;animation:p 3s infinite}
+.legend{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);text-align:center;font-size:12px;opacity:.75;pointer-events:none}
+.legend i{color:var(--accent);font-style:normal}.legend b{color:#9fb4ff;font-weight:400}
+@keyframes p{50%{opacity:.25}}
+#modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,8,.6);padding:16px;z-index:5}
+#modal.on{display:flex;animation:f .4s}
+@keyframes f{from{opacity:0}}
+.card{position:relative;max-width:560px;width:100%;max-height:88%;overflow:auto;background:var(--panel);border:1px solid rgba(255,217,138,.4);border-radius:14px;padding:28px 28px 24px;box-shadow:0 0 60px rgba(120,140,255,.25);line-height:1.9}
+.card h2{margin:0 0 4px;font-weight:400;font-size:26px;letter-spacing:.2em;color:var(--accent)}
+.meta{font-size:12px;letter-spacing:.08em;opacity:.7;margin-bottom:14px}
+.card svg{display:block;margin:0 auto 14px;max-width:240px;width:100%}
+.card h3{font-size:15px;margin:16px 0 4px;color:#9fb4ff;font-weight:400;letter-spacing:.1em}
+.card p{margin:0;font-size:15px}
+.x{position:absolute;top:10px;right:14px;background:none;border:0;color:var(--fg);font-size:28px;cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<header><h1>COSMOS<small>星空の物語 ― STORIES OF THE NIGHT SKY</small></h1></header>
+<div class="hint">ドラッグで星空を見渡し、星座をクリック(ホイールで拡大縮小)</div>
+<div class="legend"><i>■ 金色:黄道十二星座</i>　<b>■ 青:その他の星座</b>　┄ 黄道</div>
+<div id="modal"><div class="card" id="card"></div></div>
+<script>
+// st: [赤経(時), 赤緯(度), 等級]  実在の星の座標
+const C=[
+{n:"おひつじ座",en:"Aries",sym:"♈",z:1,s:"秋〜冬",b:"ハマル",st:[[2.12,23.46,2],[1.91,20.81,2.6],[1.89,19.29,3.9],[2.83,27.26,3.6]],l:[[3,0],[0,1],[1,2]],
+t:"金色の毛をもつ空飛ぶ羊。継母に命を狙われた王子フリクソスと妹ヘレを背に乗せて海を越えました。無事に王子を送り届けた羊は神に捧げられ、その金の毛皮は、のちに英雄イアソンたちが探し求める「金羊毛」となりました。"},
+{n:"おうし座",en:"Taurus",sym:"♉",z:1,s:"冬",b:"アルデバラン",st:[[4.6,16.51,.9],[5.44,28.61,1.7],[5.63,21.14,3],[4.33,15.63,3.6],[4.38,17.54,3.8],[4.48,19.18,3.5],[3.79,24.11,2.9],[4.01,12.49,3.4]],l:[[7,3],[3,4],[4,5],[5,1],[3,0],[0,2],[5,6]],
+t:"大神ゼウスは王女エウロパに近づくため、白い牡牛に姿を変えました。牡牛はエウロパを背に乗せて海を渡り、クレタ島へ。彼女が連れて来られた大陸は、のちに「ヨーロッパ」と呼ばれるようになりました。肩では星の集まり「すばる(プレアデス)」が輝きます。"},
+{n:"ふたご座",en:"Gemini",sym:"♊",z:1,s:"冬",b:"ポルックス・カストル",st:[[7.58,31.89,1.6],[7.76,28.03,1.1],[6.63,16.4,1.9],[6.73,25.13,3],[6.38,22.51,2.9],[7.34,21.98,3.5],[7.07,20.57,4],[6.25,22.51,3.3]],l:[[0,3],[3,4],[4,7],[1,5],[5,6],[6,2],[3,5]],
+t:"仲良しの双子の兄弟カストルとポルックス。不死身のポルックスに対し、弟は人間でした。弟が戦いで命を落とすと、ポルックスは「自分の不死を分けてほしい」とゼウスに願い、二人は一緒に星になったといいます。"},
+{n:"かに座",en:"Cancer",sym:"♋",z:1,s:"春",b:"アクベンス",st:[[8.97,11.86,4.3],[8.28,9.19,3.5],[8.74,18.15,3.9],[8.72,21.47,4.7],[8.78,28.76,4]],l:[[1,2],[0,2],[2,3],[3,4]],
+t:"英雄ヘラクレスが怪物ヒュドラと戦っていたとき、女神ヘラが送り込んだ大ガニ。ヘラクレスの足に噛みつきましたが、あっけなく踏みつぶされました。その忠義に免じてヘラが空に上げたといわれます。暗い星座ですが、中央のぼんやりした星団プレセペが目印です。"},
+{n:"しし座",en:"Leo",sym:"♌",z:1,s:"春",b:"レグルス",st:[[10.14,11.97,1.4],[11.82,14.57,2.1],[10.33,19.84,2.1],[11.24,20.52,2.6],[10.12,16.76,3.5],[10.28,23.42,3.4],[9.76,23.77,3],[11.24,15.43,3.3],[9.88,26.01,3.9]],l:[[0,4],[4,2],[2,5],[5,8],[8,6],[0,7],[7,1],[1,3],[3,2]],
+t:"ヘラクレスが12の難行の最初に退治した、ネメアの谷の人食いライオン。矢も剣も通じず、ヘラクレスは素手で絞め殺し、その毛皮を鎧にしました。頭は「?」を裏返した形の「ししの大鎌」で、先端のレグルスは「小さな王」の意味です。"},
+{n:"おとめ座",en:"Virgo",sym:"♍",z:1,s:"春〜初夏",b:"スピカ",st:[[13.42,-11.16,1],[12.69,-1.45,2.8],[13.04,10.96,2.8],[11.84,1.76,3.6],[13.58,-.6,3.4],[12.93,3.4,3.4],[14.27,-6,4.1]],l:[[3,1],[1,5],[5,2],[1,0],[1,4],[4,6]],
+t:"農業の女神デメテルの姿といわれます。娘ペルセポネが冥界の王にさらわれると、悲しんだデメテルは大地への恵みをやめ、世界は冬になりました。毎年春になると娘が戻り、また実りが訪れます。手にした麦の穂が、白く輝く1等星スピカです。"},
+{n:"てんびん座",en:"Libra",sym:"♎",z:1,s:"初夏",b:"ズベンエルゲヌビ",st:[[14.85,-16.04,2.7],[15.28,-9.38,2.6],[15.59,-14.79,3.9],[15.07,-25.28,3.3]],l:[[0,1],[1,2],[2,0],[0,3]],
+t:"正義の女神アストレアが、人々の善悪を量るために使った天秤です。黄金の時代が終わり人間が争い始めると、女神は地上を去って乙女座になり、天秤だけが空に残ったといいます。かつては、隣のさそり座の「爪」とされていた星座です。"},
+{n:"さそり座",en:"Scorpius",sym:"♏",z:1,s:"夏",b:"アンタレス",st:[[16.09,-19.81,2.6],[16,-22.62,2.3],[15.98,-26.11,2.9],[16.35,-25.59,2.9],[16.49,-26.43,1],[16.6,-28.22,2.8],[16.84,-34.29,2.3],[16.86,-38.05,3],[16.9,-42.36,3.6],[17.2,-43.24,3.3],[17.62,-43,1.9],[17.79,-40.13,3],[17.71,-39.03,2.4],[17.56,-37.1,1.6],[17.51,-37.3,2.7]],l:[[0,1],[1,2],[1,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,12],[12,13],[13,14]],
+t:"狩人オリオンが「どんな獣も倒せる」と自慢したため、女神ヘラが毒サソリを送り込みました。オリオンはサソリに刺されて命を落とします。赤い1等星アンタレスは「火星に対抗するもの」という意味。オリオン座は、さそり座が昇ると西へ逃げるように沈みます。"},
+{n:"いて座",en:"Sagittarius",sym:"♐",z:1,s:"夏",b:"カウス・アウストラリス",st:[[18.1,-30.42,3],[18.35,-29.83,2.7],[18.47,-25.42,2.8],[18.76,-26.99,3.2],[18.92,-26.3,2],[19.12,-27.67,3.3],[19.04,-29.88,2.6],[18.4,-34.38,1.8],[18.29,-36.76,3.1]],l:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,1],[1,7],[7,8],[0,7],[7,6]],
+t:"弓を構える半人半馬の姿。賢者ケイロンとも、弓の名手クロトスともいわれます。ひしゃくの形に並ぶ「南斗六星」は、天の川がもっとも濃く見える場所にあり、この方向に私たちの銀河系の中心があります。"},
+{n:"やぎ座",en:"Capricornus",sym:"♑",z:1,s:"秋",b:"デネブ・アルゲディ",st:[[20.3,-12.54,3.6],[20.35,-14.78,3.1],[20.46,-25.27,4.1],[20.49,-26.92,4.1],[21.44,-22.41,3.7],[21.67,-16.66,3.7],[21.78,-16.13,2.9],[21.1,-16.83,4.3]],l:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0]],
+t:"牧神パンは、怪物テュポンが襲ってきたとき、慌てて川に飛び込みました。ところが変身が間に合わず、水に浸かった下半身だけが魚の姿に。その滑稽な姿を、ゼウスが星座にしたといわれます。上半身がヤギ、下半身が魚の不思議な生き物です。"},
+{n:"みずがめ座",en:"Aquarius",sym:"♒",z:1,s:"秋",b:"サダルスウド",st:[[21.53,-5.57,2.9],[22.1,-.32,3],[22.36,-1.39,3.8],[22.48,-.02,3.7],[22.59,-.12,4],[22.42,1.38,4.7],[22.88,-7.58,3.7],[22.83,-13.59,4],[22.91,-15.82,3.3]],l:[[0,1],[1,2],[2,3],[3,5],[3,4],[4,6],[6,7],[7,8]],
+t:"トロイアの美少年ガニメデが、神々の酒の給仕役としてゼウスにさらわれた姿です。水がめから流れる水は、南のみなみのうお座の1等星フォーマルハウトへと注ぐと見立てられています。"},
+{n:"うお座",en:"Pisces",sym:"♓",z:1,s:"秋",b:"アルレシャ",st:[[2.03,2.76,3.8],[1.69,5.49,4.4],[1.19,6.14,4.8],[1.05,7.89,4.3],[.81,7.58,4.4],[23.99,6.86,4],[23.67,5.63,4.1],[23.46,6.38,4.3],[23.29,3.28,3.7],[23.07,3.82,4.5],[1.76,9.16,4.3],[1.52,15.35,3.6]],l:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[6,8],[8,9],[0,10],[10,11]],
+t:"愛の女神アフロディーテと息子エロスが、怪物テュポンに襲われ、二匹の魚に姿を変えて川へ逃げました。はぐれないよう、二人はリボンで互いの体を結びました。二匹をつなぐ「V字」の頂点が、星アルレシャです。"},
+{n:"オリオン座",en:"Orion",sym:"",s:"冬",b:"リゲル・ベテルギウス",st:[[5.92,7.41,.5],[5.42,6.35,1.6],[5.53,-.3,2.2],[5.6,-1.2,1.7],[5.68,-1.94,1.8],[5.8,-9.67,2.1],[5.24,-8.2,.1],[5.59,9.93,3.5]],l:[[7,0],[7,1],[0,4],[1,2],[2,3],[3,4],[4,5],[2,6]],
+t:"海神ポセイドンの息子で、狩りの名手オリオン。月の女神アルテミスに愛されましたが、兄アポロンの策略で、アルテミス自身の矢に射抜かれてしまいました。悲しんだ女神が空に上げたのがこの星座です。赤いベテルギウスはいつか超新星爆発を起こすと考えられています。"},
+{n:"カシオペヤ座",en:"Cassiopeia",sym:"",s:"秋(北天・一年中)",b:"シェダル",st:[[.15,59.15,2.3],[.68,56.54,2.2],[.95,60.72,2.5],[1.43,60.24,2.7],[1.91,63.67,3.4]],l:[[0,1],[1,2],[2,3],[3,4]],
+t:"エチオピアの王妃カシオペヤは、自分の美しさを海の精たちより上だと自慢して、ポセイドンを怒らせました。罰として娘アンドロメダが怪物の生贄になりかけます(英雄ペルセウスが救出)。王妃は、天で椅子に座ったまま、半分の時間は逆さまに回り続けます。W字は北極星探しの目印です。"},
+{n:"おおぐま座",en:"Ursa Major",sym:"",s:"春",b:"アリオト(北斗七星)",st:[[11.06,61.75,1.8],[11.03,56.38,2.3],[11.9,53.69,2.4],[12.26,57.03,3.3],[12.9,55.96,1.8],[13.4,54.93,2.2],[13.79,49.31,1.9]],l:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]],
+t:"森の妖精カリストは、ゼウスに愛されたことで女神ヘラの嫉妬を買い、熊の姿に変えられてしまいます。息子のアルカスは、母とは知らずにその熊を射ようとしました。ゼウスが二人を天に上げ、母はおおぐま座、息子はこぐま座になりました。ここでは北斗七星のひしゃく部分だけを描いています。"},
+{n:"こぐま座",en:"Ursa Minor",sym:"",s:"一年中(北天)",b:"ポラリス(北極星)",st:[[2.53,89.26,2],[17.54,86.59,4.4],[16.77,82.04,4.2],[15.73,77.79,4.3],[16.29,75.76,5],[15.35,71.83,3],[14.85,74.16,2.1]],l:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]],
+t:"熊にされた母カリストの息子アルカスの姿。しっぽの先にあるポラリスは、天の北極のほぼ真上にあるため、一晩中ほとんど動きません。そのため、旅人や船乗りは昔から北極星を方角の目印にしてきました。"},
+{n:"こと座",en:"Lyra",sym:"",s:"夏",b:"ベガ(織姫星)",st:[[18.62,38.78,0],[18.74,37.6,4.3],[18.91,36.9,4.2],[18.98,32.69,3.3],[18.83,33.36,3.5]],l:[[0,1],[1,2],[2,3],[3,4],[4,1]],
+t:"ベガは七夕の織姫星。機織りの名人だった織姫は、牛飼いの彦星と結ばれると仕事を忘れてしまい、怒った天帝に天の川の両岸へ引き離されました。ギリシャ神話では、亡き妻を想って歌った名手オルフェウスの竪琴とされます。"},
+{n:"はくちょう座",en:"Cygnus",sym:"",s:"夏〜秋",b:"デネブ",st:[[20.69,45.28,1.3],[20.37,40.26,2.2],[19.51,27.96,3.2],[20.77,33.97,2.5],[19.75,45.13,2.9]],l:[[0,1],[1,2],[4,1],[1,3]],
+t:"天の川の上を翼を広げて飛ぶ白鳥。親友パエトンの死を悲しんで川に潜り続けた青年キュクノスが、神々に白鳥に変えられたといわれます。形から「北十字」とも呼ばれます。デネブは、ベガ・アルタイルとともに「夏の大三角」をつくります。"},
+{n:"わし座",en:"Aquila",sym:"",s:"夏",b:"アルタイル(彦星)",st:[[19.85,8.87,.8],[19.77,10.61,2.7],[19.92,6.41,3.7]],l:[[1,0],[0,2]],
+t:"大神ゼウスの雷を運ぶ大鷲。美少年ガニメデをさらったのもこの鷲です。アルタイルは七夕の彦星で、織姫のベガとは約16光年離れています。光の速さでも16年かかる距離なので、年に一度の再会は、実際にはとても遠い恋です。"}
+];
+const D=Math.PI/180,TAU=Math.PI*2;
+// preprocess
+C.forEach(c=>{c.p=c.st.map(([h,d,m])=>[h*15*D,d*D,m]);let X=0,Y=0,Zv=0;c.p.forEach(([a,d])=>{X+=Math.cos(d)*Math.cos(a);Y+=Math.cos(d)*Math.sin(a);Zv+=Math.sin(d)});c.ra=Math.atan2(Y,X);c.dec=Math.atan2(Zv,Math.hypot(X,Y))});
+const R=(a,b)=>a+Math.random()*(b-a);
+// background stars (uniform on sphere)
+const bg=[];for(let i=0;i<1600;i++){const q=Math.random();bg.push({a:R(0,TAU),d:Math.asin(R(-1,1)),r:.4+q*q*q*1.6,t:R(0,6.28),sp:R(.5,2.5),h:Math.random()<.2?R(190,240):R(30,60)})}
+// milky way (galactic plane -> equatorial)
+const mw=[];{const aG=192.859*D,dG=27.128*D,t0=122.932*D;for(let i=0;i<2400;i++){const l=R(0,TAU),b=(Math.random()+Math.random()+Math.random()-1.5)*.16*(1+.8*Math.cos(l-0));
+ const sd=Math.sin(dG)*Math.sin(b)+Math.cos(dG)*Math.cos(b)*Math.cos(t0-l);
+ const a=aG+Math.atan2(Math.cos(b)*Math.sin(t0-l),Math.cos(dG)*Math.sin(b)-Math.sin(dG)*Math.cos(b)*Math.cos(t0-l));mw.push([a,Math.asin(sd)])}}
+// ecliptic
+const ecl=[];for(let i=0;i<=180;i++){const L=i*2*D,e=23.44*D;ecl.push([Math.atan2(Math.cos(e)*Math.sin(L),Math.cos(L)),Math.asin(Math.sin(e)*Math.sin(L))])}
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+let vw,vh,dpr;
+function rs(){dpr=Math.min(devicePixelRatio||1,2);vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;g.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',rs);rs();
+// view: stereographic projection centred on (a0,d0), east on the left like the real sky
+let a0=5.2*15*D,d0=8*D,zoom=1,vA=.0006,vD=0,drag=false,lx,ly,moved=0,hov=-1,time=0,shoot=[];
+const SC=()=>Math.max(vw,vh)*.55*zoom;
+function proj(a,d,A0,D0,s,ox,oy){const da=a-A0,cd=Math.cos(d),sd=Math.sin(d),c0=Math.cos(D0),s0=Math.sin(D0);
+ const cc=s0*sd+c0*cd*Math.cos(da);if(cc<-.8)return null;const k=2/(1+cc);
+ return[ox-k*cd*Math.sin(da)*s,oy-k*(c0*sd-s0*cd*Math.cos(da))*s]}
+const P=(a,d)=>proj(a,d,a0,d0,SC(),vw/2,vh/2);
+function sdist(px,py,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((px-a[0])*dx+(py-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-a[0]-t*dx,py-a[1]-t*dy)}
+function hit(mx,my){let best=-1,bd=20;C.forEach((c,i)=>{const q=c.sp;if(!q)return;let m=1e9;c.l.forEach(([i1,i2])=>{if(q[i1]&&q[i2])m=Math.min(m,sdist(mx,my,q[i1],q[i2]))});q.forEach(p=>{if(p)m=Math.min(m,Math.hypot(mx-p[0],my-p[1]))});if(m<bd){bd=m;best=i}});return best}
+cv.addEventListener('pointerdown',e=>{drag=true;moved=0;lx=e.clientX;ly=e.clientY;cv.classList.add('drag');cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointermove',e=>{
+ if(drag){const dx=e.clientX-lx,dy=e.clientY-ly;moved+=Math.abs(dx)+Math.abs(dy);const s=SC(),ca=Math.max(.3,Math.cos(d0));
+  a0+=dx/(s*ca);d0+=dy/s;vA=dx/(s*ca)*.8;vD=dy/s*.8;lx=e.clientX;ly=e.clientY;clampD()}
+ hov=hit(e.clientX,e.clientY);cv.classList.toggle('hover',hov>=0&&!drag)});
+cv.addEventListener('pointerup',e=>{drag=false;cv.classList.remove('drag');if(moved<6){const i=hit(e.clientX,e.clientY);if(i>=0)open(i)}});
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.6,Math.min(3,zoom*(e.deltaY<0?1.1:.9)))},{passive:false});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft')vA=.01;if(e.key==='ArrowRight')vA=-.01;if(e.key==='ArrowUp')vD=-.008;if(e.key==='ArrowDown')vD=.008;if(e.key==='Escape')closeM()});
+function clampD(){d0=Math.max(-70*D,Math.min(88*D,d0))}
+function open(i){const c=C[i];
+ // local chart centred on the constellation
+ const pts=c.p.map(([a,d])=>proj(a,d,c.ra,c.dec,1,0,0));let m=0;pts.forEach(p=>m=Math.max(m,Math.abs(p[0]),Math.abs(p[1])));const k=105/m;
+ let s='<svg viewBox="-130 -130 260 260">';
+ c.l.forEach(([a,b])=>s+=`<line x1="${pts[a][0]*k}" y1="${pts[a][1]*k}" x2="${pts[b][0]*k}" y2="${pts[b][1]*k}" stroke="#9fb4ff" stroke-width="1.5" opacity=".7"/>`);
+ c.p.forEach((q,j)=>{const r=Math.max(2,5.2-q[2]*.9);s+=`<circle cx="${pts[j][0]*k}" cy="${pts[j][1]*k}" r="${r*2.6}" fill="#ffd98a" opacity=".18"/><circle cx="${pts[j][0]*k}" cy="${pts[j][1]*k}" r="${r}" fill="#fff"/>`});
+ s+='</svg>';
+ card.innerHTML=`<button class="x" onclick="closeM()" aria-label="閉じる">×</button>${s}<h2>${c.sym} ${c.n}</h2><div class="meta">${c.en} ／ ${c.z?'黄道十二星座':'星座'} ／ 見ごろ:${c.s} ／ 主な星:${c.b}</div><h3>神話・エピソード</h3><p>${c.t}</p>`;
+ modal.classList.add('on')}
+function closeM(){modal.classList.remove('on')}
+modal.addEventListener('click',e=>{if(e.target===modal)closeM()});
+function frame(t){
+ time=t/1000;
+ if(!drag){a0+=vA;d0+=vD;vA+=(.0006-vA)*.03;vD*=.92;clampD()}
+ a0=((a0%TAU)+TAU)%TAU;
+ const gr=g.createLinearGradient(0,0,0,vh);gr.addColorStop(0,'#01020a');gr.addColorStop(.6,'#0a0f2a');gr.addColorStop(1,'#1b1440');
+ g.fillStyle=gr;g.fillRect(0,0,vw,vh);
+ // milky way
+ g.fillStyle='rgba(175,185,255,.035)';
+ for(const[a,d]of mw){const p=P(a,d);if(!p||p[0]<-20||p[0]>vw+20||p[1]<-20||p[1]>vh+20)continue;g.beginPath();g.arc(p[0],p[1],7,0,TAU);g.fill()}
+ // ecliptic
+ g.strokeStyle='rgba(255,217,138,.3)';g.lineWidth=1;g.setLineDash([3,7]);g.beginPath();let prev=null;
+ for(const[a,d]of ecl){const p=P(a,d);if(p&&prev&&Math.hypot(p[0]-prev[0],p[1]-prev[1])<vw)g.lineTo(p[0],p[1]);else if(p)g.moveTo(p[0],p[1]);prev=p}
+ g.stroke();g.setLineDash([]);
+ // background stars
+ for(const s of bg){const p=P(s.a,s.d);if(!p||p[0]<-5||p[0]>vw+5||p[1]<-5||p[1]>vh+5)continue;
+  g.globalAlpha=.4+.6*(.5+.5*Math.sin(time*s.sp+s.t));g.fillStyle=`hsl(${s.h},70%,85%)`;g.beginPath();g.arc(p[0],p[1],s.r,0,TAU);g.fill()}
+ g.globalAlpha=1;
+ // shooting stars
+ if(Math.random()<.004)shoot.push({x:R(0,vw),y:R(0,vh*.4),l:0});
+ shoot=shoot.filter(s=>s.l<1);
+ for(const s of shoot){s.l+=.025;const x=s.x+s.l*260,y=s.y+s.l*130;const gg=g.createLinearGradient(x,y,x-90,y-45);gg.addColorStop(0,`rgba(255,255,255,${1-s.l})`);gg.addColorStop(1,'rgba(255,255,255,0)');g.strokeStyle=gg;g.lineWidth=2;g.beginPath();g.moveTo(x,y);g.lineTo(x-90,y-45);g.stroke()}
+ // constellations
+ C.forEach((c,i)=>{c.sp=c.p.map(([a,d])=>P(a,d));const q=c.sp;if(!q.some(p=>p&&p[0]>-200&&p[0]<vw+200&&p[1]>-200&&p[1]<vh+200)){c.sp=null;return}
+  const h=i===hov,col=c.z?'255,217,138':'150,180,255';
+  g.strokeStyle=`rgba(${col},${h?1:.5})`;g.lineWidth=h?2.2:1.2;g.beginPath();
+  c.l.forEach(([a,b])=>{if(q[a]&&q[b]&&Math.hypot(q[a][0]-q[b][0],q[a][1]-q[b][1])<vw){g.moveTo(q[a][0],q[a][1]);g.lineTo(q[b][0],q[b][1])}});g.stroke();
+  c.p.forEach((st,j)=>{const p=q[j];if(!p)return;const r=Math.max(1.6,4.4-st[2]*.75)*Math.sqrt(zoom);
+   g.fillStyle=`rgba(${col},${h?.4:.22})`;g.beginPath();g.arc(p[0],p[1],r*3,0,TAU);g.fill();
+   g.fillStyle='#fff';g.beginPath();g.arc(p[0],p[1],r,0,TAU);g.fill()});
+  const lp=P(c.ra,c.dec);if(lp){g.font=`${h?17:14}px "Hiragino Mincho ProN","Yu Mincho",serif`;g.textAlign='center';g.fillStyle=h?'#ffd98a':`rgba(${c.z?'255,225,160':'200,215,255'},.8)`;g.fillText((c.sym?c.sym+' ':'')+c.n,lp[0],lp[1]+ (Math.max(...q.filter(Boolean).map(p=>Math.abs(p[1]-lp[1])))+22))}});
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
